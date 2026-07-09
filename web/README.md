@@ -13,7 +13,8 @@ scripts/build-web.sh          # http://127.0.0.1:8080
 
 ES modules require `http://` (not `file://`), so a static server is required. The exporter
 writes level JSON to `web/assets/` (git-ignored — see the repo `NOTICE`); an original neon
-demo level under `web/demo/` makes the game playable with zero original SkyRoads data.
+demo level under `web/demo/` (planned, P8) will make the game playable with zero original
+SkyRoads data.
 
 ## Status
 

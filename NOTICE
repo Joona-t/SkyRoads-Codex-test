@@ -22,8 +22,9 @@ is treated as derivative of the original copyrighted data. It is therefore GIT-I
 NOT distributed with this repository. To play with the original worlds, a user runs the
 exporter locally against SkyRoads data files they already own ("bring your own data").
 
-An original, hand-authored neon demo level (web/demo/) ships with the game so it is fully
-playable with ZERO original SkyRoads data.
+An original, hand-authored neon demo level (web/demo/) is planned to ship with the game
+(build phase P8) so it will be fully playable with ZERO original SkyRoads data. Until that
+lands, playing requires running the exporter against SkyRoads files you own.
 
 Open owner decisions (see MERGER-PLAN.md §8): repository public-vs-private posture, and
 whether to distribute original-derived assets or remain extract-only. Until resolved, the

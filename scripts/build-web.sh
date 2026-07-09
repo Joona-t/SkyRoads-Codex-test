@@ -9,6 +9,12 @@ cd "$ROOT"
 OUT="${1:-web/assets}"
 PORT="${2:-8080}"
 
+# The server below serves web/ — an OUT outside web/ would export where the game never looks.
+case "$OUT" in
+  web/*) ;;
+  *) echo "error: OUT must live under web/ (got '$OUT') — the server serves web/" >&2; exit 2 ;;
+esac
+
 echo "▸ exporting SkyRoads levels + palettes -> $OUT"
 cargo run -q -p skyroads-cli --release -- export-json . "$OUT"
 

@@ -43,7 +43,7 @@ web/  Three.js/WebGL neon game
 **Two conflicts resolved decisively:**
 
 - **Sim: faithful JS/TS port, NOT WASM.** `gameplay.rs` is ~600 lines of pure fixed-point math with zero render deps — a direct transliteration is cleaner than a WASM toolchain *and* is required by the product: our NFS stat multipliers and accessibility assists must inject INTO the constants, and we must be free to tune feel. Fidelity is protected by a **golden-trace regression test** against the existing `demo-sim` (DEMO.REC) output. WASM-compiling `skyroads-core` remains a documented future fidelity option if drift ever becomes a problem, but it does not gate v1.
-- **Serde: feature-gated optional on `skyroads-data`, `serde_json` in the CLI.** Add `serde = { version="1.0", features=["derive"], optional=true }` + `[features] serde = ["dep:serde"]` to `skyroads-data`; the CLI depends on it with `features=["serde"]`. The default build stays dependency-free (purity preserved); only `export-json` pulls serde. This beats a hand-rolled JSON writer on maintainability while honoring the repo's zero-dep ethos by default. **Note to owner:** the first `cargo build` of the CLI after this lands will fetch serde from crates.io — a normal *build-time* dependency, not a runtime/LLM/paid API, fully compliant with rule #10.
+- **Serde: in the leaf CLI only** *(AS BUILT — supersedes the original feature-gate proposal)*. `serde` + `serde_json` were added to `skyroads-cli` alone; **`skyroads-data` was left 100% untouched** (no feature gate needed — its dependency tree remains empty, verified via `cargo tree`). The CLI defines thin mirror wire-structs (`LevelExport`/`CellExport`/…) built from the public `Level`/`LevelCell` fields, and `world_index_for_level` was **inlined** in the CLI (`(i-1)/3`, i=0→0) instead of made pub in `skyroads-core`. Strictly more additive than the original plan. **Note to owner:** `cargo build` of the CLI fetches serde from crates.io — a normal *build-time* dependency, not a runtime/LLM/paid API, fully compliant with rule #10.
 
 ---
 
@@ -116,8 +116,10 @@ fn write_json<T: serde::Serialize>(path: &Path, v: &T) -> Result<()> {
   },
   "palette": [[r,g,b], /* … 72 entries, road_XX.json inlined or referenced */],
   "cells": [                            // length rows × 7 cols, row-major
-    [ { "raw":1287, "kind":2, "tile":true, "tunnel":true, "cube":120,
-        "tileColor":7, "cubeColor":5, "tileEffect":"none", "cubeEffect":"accelerate" },
+    [ { "raw":1287, "kind":5, "tile":true, "tunnel":true, "cube":120,
+        "tileColor":7, "cubeColor":0, "tileEffect":"none", "cubeEffect":"none" },
+      // raw 1287 = 0x0507: flags 0x05 = tunnel|cube120 → kind 5; color 0x07 → low 7 (tile, no effect), high 0.
+      // An effect cell example: raw with color high-nibble 10 (0x0A) → cubeEffect "accelerate".
       /* …7 cells… */ ],
     /* …length rows… */
   ]
@@ -136,26 +138,28 @@ Cell fields decoded from the u16 descriptor (`level.rs:189-213`): `kind` = `high
 
 **Non-negotiable:** fixed **70 Hz** tick (`app.rs:5`), decoupled from `requestAnimationFrame` via an accumulator (`dt = 1000/70 ≈ 14.2857 ms`); interpolate the ship transform between ticks for smooth 60/120 fps. The entire *feel* is 70 Hz fixed-point momentum — never bind physics to frame time. There is **no auto-run**: `z_velocity` is conserved (no z-friction), clamped `[0, 0.166656]` tiles/tick; hold accel to build/maintain speed.
 
-**Port the quantizers verbatim** (`gameplay.rs:735-757`): `floor16` = round to 1/128, `floor32` = round to 1/65536, `s_floor` = asymmetric-toward-zero. A naive float port WILL drift from the golden trace.
+**Port the quantizers verbatim** (`gameplay.rs:735-757`): `floor16`/`floor32` = **floor** (round down) to 1/128 / 1/65536; `round16_nearest`/`round32_nearest` = **round-to-nearest** 1/128 / 1/65536, used ONLY in sanitize (`gameplay.rs:94-98`); `s_floor` = truncate toward zero. Four distinct functions — a naive float port (or conflating floor with round) WILL drift from the golden trace.
+
+**Cross-tick state:** the sim persists an `expected` ship position between ticks (class field, initialized equal to the ship). Step 5 compares the actual position against the **previous tick's** `expected`; it is overwritten only at step 11. Port this as persistent state, not a local.
 
 **Per-tick update order** (`Ship::update`, `gameplay.rs:104-147`) — reimplement in this exact sequence:
 
-1. **sanitize** — quantize x,y to 1/128, z to 1/65536.
+1. **sanitize** — x,y = `round16_nearest` (round-to-nearest 1/128), z = `round32_nearest` (round-to-nearest 1/65536). The ONLY place the `_nearest` variants are used; everywhere else floors.
 2. **cell lookup** — `getCell(x,z)`; `isAboveNothing = cell.isEmpty()`.
-3. **touch effect** (only when on ground): if `y==80 && has_tile` → `tileEffect`; if `y>80 && y==cube_height` → `cubeEffect`; else none.
-4. **apply effect** — Accelerate `+303/65536`, Decelerate `-303/65536`, Kill → Exploded, RefillOxygen → fuel=oxygen=30000; then clamp z.
-5. **y-velocity / landing** — if height changed and `|y_vel| > gravity·0.253906` → BOUNCE (`y_vel *= -0.5`, emit `ShipBounced`); else `y_vel = 0`.
+3. **touch effect** (only when on ground): uses `floor(y)`, NOT strict equality (`gameplay.rs:153-157`): if `floor(y)==80 && has_tile` → `tileEffect`; if `floor(y)>80 && floor(y)==cube_height` → `cubeEffect`; else none. Record `isOnDecelPad = (effect==Decelerate)` for step 11.
+4. **apply effect** (Alive only) — Accelerate `+303/65536`, Decelerate `-303/65536`, Kill → Exploded, RefillOxygen → fuel=oxygen=30000 (emit `ShipRefilled` only if either was < 0x6978 = 27000); then clamp z.
+5. **y-velocity / landing** — compares against the PREVIOUS tick's `expected` (see preamble). If height changed: bounce only when `(slide == 0 || overhangOffset >= 2)` AND `|y_vel| > gravity·0.253906` → `y_vel *= -0.5` (emit `ShipBounced` only when y_vel was negative, i.e. falling); else `y_vel = 0`. The slide-guard branch is load-bearing — omitting it makes ledge slides bounce.
 6. **z-velocity** — `z_vel += accelInput · 75/65536` (alive only); clamp `[0, 0.166656]`.
-7. **x-velocity** — `x_base = turnInput · 29/128` when controllable (grounded-not-over-gap, OR rising inside a jump window <30 units) and NOT on a slide tile.
-8. **jump** — if grounded & !going_up & jump & **gravity < 20 (0x14)** & alive → `y_vel = 9.0`, going_up=true, record origin. **gravity ≥ 20 DISABLES jump** (shipped mechanic, level 20).
-9. **Jump-O-Master** (once, when going_up & y≥110) — predictive landing assist that nudges `x_base` ±10–60% and `z_vel` ±10–60% searching a trajectory that lands ON a tile (`will_land_on_tile` simulates the full arc). **Surface as an accessibility/difficulty assist toggle** (off = hardcore original).
-10. **gravity** — if y≥40: `y_vel += gravity_accel`; else clamp min fall speed. `gravity_accel(G) = -floor(G·5760/400)/128` → G4=-0.445, G8=-0.898, G12=-1.344, G20=-2.25.
-11. **attempt_motion** — `x += floor(x_base·128)·floor(motionVel·65536)/65536 + slide`; `y += y_vel`; `z += z_vel` (alive only). `motionVel = z_vel + 0.023804` forward-creep — **the creep affects ONLY lateral steering rate, NOT z advancement** (do not add it to z).
+7. **x-velocity** — `x_base = turnInput · 29/128` when controllable (grounded-not-over-gap, OR rising inside a jump window <30 units **with `x_base` currently 0** — air steering is one-shot per jump) and NOT on a slide tile.
+8. **jump** — if `!isAboveNothing` & !going_up & jump & **gravity < 20 (0x14)** & alive → `y_vel = 9.0`, going_up=true, record origin. NOTE: the gate is `!isAboveNothing` (a non-empty cell below), NOT "on ground" — a falling ship above a tile cell may legally re-jump mid-air. **gravity ≥ 20 DISABLES jump** (shipped mechanic, level 20).
+9. **Jump-O-Master** (once, when going_up & y≥110) — predictive landing assist that nudges `x_base` ±10–60% and `z_vel` ±10–60% searching a trajectory that lands on a **non-empty, non-Kill** tile (`will_land_on_tile` simulates the full arc and rejects Kill tiles, `gameplay.rs:566-569`). Track the applied z-vel delta as `jomDelta` — it is paid back at step 16. **Surface as an accessibility/difficulty assist toggle** (off = hardcore original).
+10. **gravity** — if y≥40: `y_vel += gravity_accel`; else clamp min fall speed. `gravity_accel(G) = -floor(G·5760/400)/128` → G4=-0.445, G8=-0.898, G12=-1.344, G20=-2.25. Then `y_vel = s_floor(y_vel·128)/128` — the mandatory per-tick 1/128 truncation (omit it and the arc drifts off the golden trace).
+11. **attempt_motion** — `x += floor(x_base·128)·floor(motionVel·65536)/65536 + slide`; `y += y_vel`; `z += z_vel` (alive only). `motionVel = z_vel + (isOnDecelPad ? 0 : 0x618/0x10000 ≈ 0.023804)` — the forward-creep is **suppressed on Decelerate pads** (`gameplay.rs:278-281`, `isOnDecelPad` from step 3) and **affects ONLY lateral steering rate, NOT z advancement** (do not add it to z). `expected` is overwritten here for next tick's step 5.
 12. **swept move_to** — 5 coarse substeps then fine z→x→y granular stepping, each stopping just before `isInsideTile()`. This is how cubes/tunnel-ceilings block motion.
 13. **handle_bumps** — if z blocked, try x-nudge ±7.25 to slip past a cube edge → `ShipBumpedWall`.
 14. **handle_collision** — if z couldn't reach expected: if `z_vel < 0.055552` (= max/3) → stop + bump; ELSE → **EXPLODE**. (Fast frontal ram = death, slow = stop.)
 15. **handle_slide_collision** — lateral blocked → cancel x_base, zero slide, z penalty `-0x97/65536`.
-16. **handle_bounce** — set on_ground; on landing reset jump/JOM flags, detect tile-edge overhang → `sliding_accel`/`slide_amount` (slide off a ledge).
+16. **handle_bounce** — set on_ground; on landing: `z_vel += jomDelta; jomDelta = 0` (the JOM z-velocity payback, `gameplay.rs:437-438` — omit it and assisted jumps permanently alter speed), reset jump/JOM flags, detect tile-edge overhang → `sliding_accel`/`slide_amount` (slide off a ledge).
 17. **fuel/oxygen** — `oxygen -= 30000/(36·O_level)` (SPEED-INDEPENDENT); `fuel -= z_vel·30000/F_level` (SPEED-PROPORTIONAL); ≤0 → OutOfOxygen / OutOfFuel. Full tank = 30000.
 18. **fall** — `y<80` while Alive → Fallen (freeze all velocities).
 
@@ -181,7 +185,7 @@ interface FrameResult {
 
 **Stat multipliers inject here** (see §6): `topSpeedMult` scales the 0.166656 clamp; `accelMult` scales `75/65536`; `handlingMult` scales `29/128`; `liftMult` scales jump `9.0` and effective `level.fuel`.
 
-**Golden-trace gate:** before any reskin, the JS `tick()` must match the Rust `demo-sim` output to ~1e-4 for N frames on DEMO.REC (Rust test asserts e.g. `z=3.0011444091796875` at frame 1, `gameplay.rs:785-802`). This is the P3 done-criterion.
+**Golden-trace gate:** before any reskin, the JS `tick()` must match the Rust `demo-sim` output to ~1e-4 for N frames on DEMO.REC (Rust test asserts e.g. `z=3.0011444091796875` at **frame_index 0, the first tick**, `gameplay.rs:785-802`). This is the P3 done-criterion.
 
 ---
 
@@ -334,8 +338,8 @@ The honest one-liner for the owner: *"The engine and neon skin are ours (MIT). T
 
 Each phase ends with a **verifiable done-criterion** and an **adversarial-audit gate** (a skeptic re-runs the check and reports verified-vs-debunked before the phase counts as done).
 
-- **P1 — Asset export.** Add serde feature + `export-json` CLI arm; make `world_index_for_level` pub; emit `levels/level_00..30.json` + `index.json` + `palettes/road_*.json` + `world_*.json` (road palettes ×4, world palettes not). **Done:** `cargo run -p skyroads-cli -- export-json . web/assets` writes 31 level files + index + palettes; `cargo test -p skyroads-data -p skyroads-core` still green; level_00 shows gravity 8 / fuel 130 / oxygen 60 / length 160. **Gate:** re-run export, diff a level JSON's cell count against `summary` dispatch-kind totals; confirm no serde leaked into a default build (`cargo build -p skyroads-data` has zero external deps).
-- **P2 — 3D scaffold loads one level.** `web/` skeleton, vendored Three, importmap, static server; `loader.js` + `scene.js` instance the 3 solid geometries + tunnel arch from `level_00.json` with placeholder materials; static chase cam. **Done:** browser renders level 0's full grid at true scale, holes visible as gaps, cubes at correct heights; no console errors. **Gate:** count rendered instances == non-empty cells in JSON.
+- **P1 — Asset export. ✅ DONE (as built, 2026-07-09).** `export-json` CLI arm added (serde in the leaf CLI only; `world_index` inlined; **road palettes inlined per level JSON** rather than separate `palettes/road_*.json` — the schema's `palette` field; world palettes emitted as `palettes/world_0..9.json`). **Done-criteria met:** 31 level files + index + 10 world palettes; data/core tests 19+12 green; level_00 = gravity 8 / fuel 130 / oxygen 60 / length 160. **Gate (reproduced by Fable-5 audit):** cell totals 30436 == 30436 vs `summary` dispatch totals, per-kind exact {0:25781, 1:987, 2:2132, 3:268, 4:1079, 5:189}; kind provably `flags&0x07` with 0 mismatches × 31 levels; two export runs byte-identical; `skyroads-data` dependency tree still empty.
+- **P2 — 3D scaffold loads one level.** `web/` skeleton, vendored Three, importmap, static server; `loader.js` + `scene.js` instance the 3 solid geometries + tunnel arch from `level_00.json` with placeholder materials; static chase cam. **Done:** browser renders level 0's full grid at true scale, holes visible as gaps, cubes at correct heights; no console errors (incl. zero 404s — the split three.core.min.js is vendored). **Gate:** count rendered instances **per geometry class** (flat/short/tall/tunnel) against JSON-derived expected counts — NEVER total-vs-nonEmpty (multi-primitive cells make that unsatisfiable: level set has 17,357 instances across 15,265 non-empty cells).
 - **P3 — Gameplay sim.** Port `gameplay.rs` to `sim.js` (quantizers verbatim, 70 Hz accumulator, all 18 steps, win-at-tunnel). Wire keyboard/touch input. **Done:** JS `tick()` matches Rust `demo-sim` golden trace to ~1e-4 for ≥300 frames on DEMO.REC; ship strafes/jumps/dies/wins correctly on level 0. **Gate:** skeptic re-runs the golden trace and confirms the tolerance; verifies forward-creep does NOT touch z and jump is gated at gravity≥20.
 - **P4 — Neon materials + bloom + backdrop.** Effect→neon LUT, emissive materials, `EffectComposer`+`UnrealBloomPass`+`OutputPass`, ACES tone-mapping, synthwave sky/sun/skyline/starfield backdrop, FogExp2, per-world palette tint. **Done:** level 0 renders in full neon with bloom at ≥55 fps desktop, ≥55 fps mid-device with half-res-bloom tier; special tiles legible by color. **Gate:** verify OutputPass is final (no gamma bug); measure fps on longest road with 16-row chunk culling.
 - **P5 — NFS customization + garage.** Procedural hovercraft; paint/underglow/livery → material params; 4-stat tuning tree → sim constant multipliers; garage UI; REACTION MARGIN readout; Sparky livery slot. **Done:** buying HANDLING visibly widens strafe authority; paint/underglow/livery change the 3D ship; save persists. **Gate:** confirm each stat multiplier hits the correct constant and the trade-off is felt (max-speed/stock-handling build dies on a gap that a handling build clears).

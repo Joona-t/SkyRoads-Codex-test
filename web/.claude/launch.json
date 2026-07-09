@@ -4,8 +4,16 @@
     {
       "name": "neondrift-web",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8080", "--bind", "127.0.0.1", "-d", "/Users/darkfire/SkyRoads-Codex-test/web"],
-      "port": 8080
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8098",
+        "--bind",
+        "127.0.0.1",
+        "-d",
+        "/Users/darkfire/SkyRoads-Codex-test/web"
+      ],
+      "port": 8098
     }
   ]
 }

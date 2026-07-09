@@ -331,9 +331,10 @@ struct CellExport {
 
 fn cell_export(c: &LevelCell) -> CellExport {
     let cube_bits = match c.cube_height {
+        None => 0u8,
         Some(100) => 2u8,
         Some(120) => 4u8,
-        _ => 0u8,
+        Some(other) => unreachable!("unexpected cube height {other} (level.rs guarantees 100/120)"),
     };
     CellExport {
         raw: c.raw_descriptor,
@@ -512,10 +513,17 @@ fn export_json(source_root: &Path, extra: &[String]) -> Result<()> {
                         .collect();
                     write_json(&out_dir.join("palettes").join(format!("world_{i}.json")), &pal)?;
                     world_palettes += 1;
+                } else {
+                    eprintln!("warn: WORLD{i}.LZS parsed but contains no frames — palette skipped");
                 }
             }
             Err(e) => eprintln!("warn: WORLD{i}.LZS: {e}"),
         }
+    }
+    if world_palettes == 0 {
+        return Err(Error::invalid_format(
+            "no world palettes exported (0/10) — wrong source_root? The web game needs them",
+        ));
     }
 
     println!(
