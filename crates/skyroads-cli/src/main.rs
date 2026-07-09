@@ -1,11 +1,14 @@
 use std::env;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process;
 
 use skyroads_core::{GameplaySession, ShipState};
 use skyroads_data::{
-    level_from_road_entry, load_demo_rec_path, load_muzax_lzs_path, load_roads_lzs_path,
-    load_skyroads_exe_path, load_trekdat_lzs_path, Result,
+    level_from_road_entry, levels_from_roads_archive, load_demo_rec_path, load_image_archive_path,
+    load_muzax_lzs_path, load_roads_lzs_path, load_skyroads_exe_path, load_trekdat_lzs_path, Error,
+    Level, LevelCell, Result, TouchEffect, GROUND_Y, LEVEL_CENTER_X, LEVEL_MAX_X, LEVEL_MIN_X,
+    LEVEL_TILE_STRIDE_X,
 };
 
 fn main() {
@@ -25,8 +28,11 @@ fn run() -> Result<()> {
     match (command.as_deref(), source_root) {
         (Some("summary"), Some(source_root)) => summary(Path::new(&source_root)),
         (Some("demo-sim"), Some(source_root)) => demo_sim(Path::new(&source_root), &extra),
+        (Some("export-json"), Some(source_root)) => export_json(Path::new(&source_root), &extra),
         _ => {
-            eprintln!("usage: {program} <summary|demo-sim> <source_root> [args]");
+            eprintln!("usage: {program} <summary|demo-sim|export-json> <source_root> [out_dir]");
+            eprintln!("  export-json  decode all roads + world palettes to JSON for the web/ neon game");
+            eprintln!("               (out_dir default: web/assets)");
             process::exit(2);
         }
     }
@@ -269,4 +275,252 @@ fn join_events(events: &[skyroads_core::GameplayEvent]) -> String {
         })
         .collect::<Vec<_>>()
         .join(",")
+}
+
+// ================================================================================================
+// export-json — asset-extraction pipeline for the web/ neon 3D game (MERGER-PLAN.md §3).
+// Serializes the already-decoded Level grid + palettes to JSON. Serde lives only in this leaf
+// binary so the library crates stay zero-dependency. Emits NOTHING that is committed to git:
+// the default out_dir (web/assets) is .gitignored — see NOTICE for the IP rationale.
+// ================================================================================================
+
+/// WORLD*.LZS are visual/palette themes; roads map to them as `world = (i-1)/3` for i>=1.
+fn world_index(road_index: usize) -> usize {
+    if road_index == 0 {
+        0
+    } else {
+        (road_index - 1) / 3
+    }
+}
+
+fn effect_str(effect: TouchEffect) -> &'static str {
+    match effect {
+        TouchEffect::None => "none",
+        TouchEffect::Accelerate => "accelerate",
+        TouchEffect::Decelerate => "decelerate",
+        TouchEffect::Kill => "kill",
+        TouchEffect::Slide => "slide",
+        TouchEffect::RefillOxygen => "refillOxygen",
+    }
+}
+
+/// RoadEntry.palette_vga is RAW 6-bit VGA (0..63) — scale x4 (saturating) to 8-bit RGB888.
+/// (World/CMAP palettes are ALREADY x4'd by the image parser — do NOT scale those again.)
+fn vga6_to_rgb888(vga: &[u8]) -> Vec<[u8; 3]> {
+    vga.chunks_exact(3)
+        .map(|c| [c[0].saturating_mul(4), c[1].saturating_mul(4), c[2].saturating_mul(4)])
+        .collect()
+}
+
+#[derive(serde::Serialize)]
+struct CellExport {
+    raw: u16,
+    kind: u8, // geometry primitive: 0 flat,1 flat+tunnel,2 cube100,3 cube100+tunnel,4 cube120,5 cube120+tunnel
+    tile: bool,
+    tunnel: bool,
+    cube: Option<u16>,
+    #[serde(rename = "tileColor")]
+    tile_color: u8,
+    #[serde(rename = "cubeColor")]
+    cube_color: u8,
+    #[serde(rename = "tileEffect")]
+    tile_effect: &'static str,
+    #[serde(rename = "cubeEffect")]
+    cube_effect: &'static str,
+}
+
+fn cell_export(c: &LevelCell) -> CellExport {
+    let cube_bits = match c.cube_height {
+        Some(100) => 2u8,
+        Some(120) => 4u8,
+        _ => 0u8,
+    };
+    CellExport {
+        raw: c.raw_descriptor,
+        kind: cube_bits + if c.has_tunnel { 1 } else { 0 },
+        tile: c.has_tile,
+        tunnel: c.has_tunnel,
+        cube: c.cube_height,
+        tile_color: c.color_index_low,
+        cube_color: c.color_index_high,
+        tile_effect: effect_str(c.tile_effect),
+        cube_effect: effect_str(c.cube_effect),
+    }
+}
+
+#[derive(serde::Serialize)]
+struct StartExport {
+    x: f64,
+    y: f64,
+    z: f64,
+}
+
+#[derive(serde::Serialize)]
+struct ConstantsExport {
+    #[serde(rename = "tileStrideX")]
+    tile_stride_x: f64,
+    #[serde(rename = "groundY")]
+    ground_y: f64,
+    #[serde(rename = "roadColumns")]
+    road_columns: usize,
+    #[serde(rename = "levelMinX")]
+    level_min_x: f64,
+    #[serde(rename = "levelMaxX")]
+    level_max_x: f64,
+    #[serde(rename = "levelCenterX")]
+    level_center_x: f64,
+    #[serde(rename = "cubeShortTop")]
+    cube_short_top: u16,
+    #[serde(rename = "cubeTallTop")]
+    cube_tall_top: u16,
+    #[serde(rename = "zPerRow")]
+    z_per_row: f64,
+}
+
+#[derive(serde::Serialize)]
+struct LevelExport {
+    version: u32,
+    #[serde(rename = "roadIndex")]
+    road_index: usize,
+    name: String,
+    world: usize,
+    gravity: u16,
+    fuel: u16,
+    oxygen: u16,
+    columns: usize,
+    length: usize,
+    start: StartExport,
+    constants: ConstantsExport,
+    palette: Vec<[u8; 3]>,
+    cells: Vec<Vec<CellExport>>,
+}
+
+fn build_level_export(level: &Level, world: usize, palette: Vec<[u8; 3]>) -> LevelExport {
+    let cells = level
+        .cells
+        .iter()
+        .map(|row| row.iter().map(cell_export).collect())
+        .collect();
+    LevelExport {
+        version: 1,
+        road_index: level.road_index,
+        name: level.name.clone(),
+        world,
+        gravity: level.gravity,
+        fuel: level.fuel,
+        oxygen: level.oxygen,
+        columns: level.width(),
+        length: level.length(),
+        start: StartExport {
+            x: LEVEL_CENTER_X,
+            y: GROUND_Y,
+            z: 3.0,
+        },
+        constants: ConstantsExport {
+            tile_stride_x: LEVEL_TILE_STRIDE_X,
+            ground_y: GROUND_Y,
+            road_columns: level.width(),
+            level_min_x: LEVEL_MIN_X,
+            level_max_x: LEVEL_MAX_X,
+            level_center_x: LEVEL_CENTER_X,
+            cube_short_top: 100,
+            cube_tall_top: 120,
+            z_per_row: 1.0,
+        },
+        palette,
+        cells,
+    }
+}
+
+#[derive(serde::Serialize)]
+struct IndexEntry {
+    file: String,
+    world: usize,
+    name: String,
+    #[serde(rename = "roadIndex")]
+    road_index: usize,
+    length: usize,
+}
+
+#[derive(serde::Serialize)]
+struct LevelIndex {
+    version: u32,
+    #[serde(rename = "generatedFrom")]
+    generated_from: &'static str,
+    count: usize,
+    levels: Vec<IndexEntry>,
+}
+
+fn write_json<T: serde::Serialize>(path: &Path, value: &T) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let json =
+        serde_json::to_string_pretty(value).map_err(|e| Error::invalid_format(e.to_string()))?;
+    fs::write(path, json)?;
+    Ok(())
+}
+
+fn export_json(source_root: &Path, extra: &[String]) -> Result<()> {
+    let out_dir = extra
+        .first()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("web/assets"));
+
+    let roads = load_roads_lzs_path(source_root.join("ROADS.LZS"))?;
+    let levels = levels_from_roads_archive(&roads);
+
+    let mut index = Vec::with_capacity(levels.len());
+    for (level, road) in levels.iter().zip(roads.roads.iter()) {
+        let world = world_index(level.road_index);
+        let palette = vga6_to_rgb888(&road.palette_vga);
+        let file = format!("level_{:02}.json", level.road_index);
+        write_json(
+            &out_dir.join("levels").join(&file),
+            &build_level_export(level, world, palette),
+        )?;
+        index.push(IndexEntry {
+            file,
+            world,
+            name: level.name.clone(),
+            road_index: level.road_index,
+            length: level.length(),
+        });
+    }
+    let level_count = index.len();
+    write_json(
+        &out_dir.join("levels").join("index.json"),
+        &LevelIndex {
+            version: 1,
+            generated_from: "ROADS.LZS",
+            count: level_count,
+            levels: index,
+        },
+    )?;
+
+    // Per-world backdrop palettes (already x4'd by the CMAP parser — emit as-is).
+    let mut world_palettes = 0usize;
+    for i in 0..=9u32 {
+        match load_image_archive_path(source_root.join(format!("WORLD{i}.LZS"))) {
+            Ok(archive) => {
+                if let Some(frame) = archive.frames.first().and_then(|f| f.first()) {
+                    let pal: Vec<[u8; 3]> = frame
+                        .palette
+                        .colors
+                        .iter()
+                        .map(|c| [c.r, c.g, c.b])
+                        .collect();
+                    write_json(&out_dir.join("palettes").join(format!("world_{i}.json")), &pal)?;
+                    world_palettes += 1;
+                }
+            }
+            Err(e) => eprintln!("warn: WORLD{i}.LZS: {e}"),
+        }
+    }
+
+    println!(
+        "exported {level_count} levels + {world_palettes} world palettes -> {}",
+        out_dir.display()
+    );
+    Ok(())
 }

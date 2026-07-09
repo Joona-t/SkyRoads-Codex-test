@@ -1,0 +1,30 @@
+NEONDRIFT × SkyRoads — Attribution & IP Notice
+==============================================
+
+SkyRoads (1993) — including the SKYROADS.EXE binary and ALL original level data, artwork,
+palettes, music, and sound effects (the *.LZS, *.SND, *.DAT, *.REC resources) — remains
+© Bluemoon Interactive and is NOT licensed by this repository.
+
+Those original assets are parsed and re-skinned here for the purposes of preservation,
+reverse-engineering research, and interoperability. Recoloring or re-rendering them does
+NOT clear the original copyright, and the MIT LICENSE in this repository cannot and does
+not relicense them.
+
+The MIT grant (see LICENSE) covers ONLY original code and original art authored here:
+  - the Rust reverse-engineering / native-port crates (crates/)
+  - the `export-json` asset-extraction pipeline
+  - the NEONDRIFT web game (web/): Three.js engine, garage, meta-progression, neon
+    materials, save system
+  - the "Sparky" (neon wolf) mascot art — an original LoveSpark asset (MIT)
+
+Generated, derived asset data (the JSON/PNG produced by `export-json` under web/assets/)
+is treated as derivative of the original copyrighted data. It is therefore GIT-IGNORED and
+NOT distributed with this repository. To play with the original worlds, a user runs the
+exporter locally against SkyRoads data files they already own ("bring your own data").
+
+An original, hand-authored neon demo level (web/demo/) ships with the game so it is fully
+playable with ZERO original SkyRoads data.
+
+Open owner decisions (see MERGER-PLAN.md §8): repository public-vs-private posture, and
+whether to distribute original-derived assets or remain extract-only. Until resolved, the
+project defaults to extract-only and local play.
