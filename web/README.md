@@ -20,7 +20,8 @@ SkyRoads data.
 
 In active autonomous build (`/goal` under `/loop`).
 - **P1 ✅** asset-extraction pipeline (`skyroads-cli export-json` → `web/assets/*.json`)
-- **P2** Three.js scaffold renders one level in true 3D
+- **P2 implemented; browser gate pending** — chunked Three.js instancing builds one level in true 3D; geometry counts are
+  checked against exported JSON and a 600-frame runtime probe is exposed at `window.__NEONDRIFT_METRICS__`
 - **P3** faithful 70 Hz gameplay sim (golden-trace-verified) · **P4** neon materials + bloom
 - **P5** NFS customization + garage · **P6** worlds/progression/ghost-Blacklist · **P7** audio · **P8** a11y + polish
 
