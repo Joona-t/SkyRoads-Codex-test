@@ -6,12 +6,152 @@
 <meta name="theme-color" content="#05010d">
 <title>NEONDRIFT — SkyRoads neon 3D</title>
 <style>
+  :root{ color-scheme:dark; --cyan:#16f0e6; --blue:#78f6ff; --amber:#ffe66d; --pink:#ff3bd4;
+    --red:#ff2b4e; --green:#45ff8a; --panel:rgba(3,8,18,.82); --line:rgba(137,252,255,.34); }
   html,body{ margin:0; height:100%; background:#05010d; color:#eafcff; overflow:hidden;
-    font-family:'Segoe UI',system-ui,sans-serif; }
+    font-family:'Segoe UI',system-ui,sans-serif; letter-spacing:0; }
+  button{ border:1px solid var(--line); border-radius:8px; background:rgba(7,18,34,.82); color:#eafcff;
+    min-height:42px; padding:0 14px; font:700 13px/1 system-ui,sans-serif; letter-spacing:0; }
+  button:disabled{ opacity:.46; transform:none; }
+  button:focus-visible{ outline:2px solid var(--amber); outline-offset:2px; }
+  button:active{ transform:translateY(1px); }
+  select{ border:1px solid var(--line); border-radius:8px; background:rgba(7,18,34,.82); color:#eafcff;
+    min-height:42px; padding:0 12px; font:700 13px/1 system-ui,sans-serif; }
+  select:focus-visible,input:focus-visible{ outline:2px solid var(--amber); outline-offset:2px; }
   #c{ display:block; width:100vw; height:100vh; touch-action:none; }
-  #hud{ position:fixed; top:10px; left:12px; z-index:10; font-size:13px; letter-spacing:.08em;
-    color:#8fb7c9; text-shadow:0 1px 3px #000; user-select:none; pointer-events:none; white-space:pre; }
-  #err{ position:fixed; bottom:10px; left:12px; z-index:10; color:#ff2b4e; font-size:13px; white-space:pre-wrap; }
+  #app-shell{ position:fixed; inset:0; z-index:15; pointer-events:none; }
+  #app-shell [data-screen]{ pointer-events:auto; }
+  .screen{ position:fixed; inset:0; display:grid; align-items:center; justify-items:start;
+    padding:clamp(16px,4vw,48px); background:linear-gradient(90deg,rgba(5,1,13,.92),rgba(5,1,13,.42) 62%,rgba(5,1,13,.18)); }
+  .screen[hidden]{ display:none; }
+  .screen-panel{ width:min(960px,calc(100vw - 32px)); max-width:100%; min-width:0; }
+  .screen h1,.screen h2{ margin:0 0 10px; color:#fff; letter-spacing:0; line-height:1; }
+  .screen h1{ font-size:clamp(42px,8vw,88px); }
+  .screen h2{ font-size:clamp(26px,5vw,48px); }
+  .screen p{ max-width:680px; margin:0 0 18px; color:#cdeff4; line-height:1.45; }
+  .command-row{ display:flex; flex-wrap:wrap; gap:10px; }
+  .route-grid{ display:grid; grid-template-columns:minmax(220px,320px) minmax(0,1fr); gap:18px; align-items:start; min-width:0; }
+  .route-list{ display:grid; grid-template-columns:repeat(auto-fit,minmax(128px,1fr)); gap:8px; max-height:38vh; overflow:auto; min-width:0; }
+  .starter-list{ grid-template-columns:1fr; max-height:none; }
+  .route-list:empty{ display:none; }
+  .route-card{ border:1px solid var(--line); border-radius:8px; padding:14px; background:rgba(5,20,32,.72); min-width:0; overflow-wrap:anywhere; }
+  .route-card[data-completed="true"]{ border-color:rgba(69,255,138,.64); }
+  .route-card[data-rival-active="true"]{ border-color:rgba(255,230,109,.72); box-shadow:0 0 18px rgba(255,230,109,.16); }
+  .route-card[data-unlocked="false"]{ opacity:.62; }
+  .route-card h3{ margin:0 0 8px; }
+  .muted{ color:#9ecbd3; font-size:13px; }
+  .garage-grid{ display:grid; grid-template-columns:minmax(220px,300px) minmax(260px,1fr); gap:16px; align-items:start; max-height:72vh; overflow:auto; padding-right:4px; }
+  .garage-panel{ border:1px solid var(--line); border-radius:8px; padding:14px; background:rgba(5,20,32,.72); }
+  .garage-panel h3{ margin:0 0 10px; font-size:16px; }
+  .garage-items,.tuning-grid{ display:grid; gap:8px; }
+  .garage-item,.tuning-item{ display:grid; grid-template-columns:auto 1fr auto; gap:10px; align-items:center;
+    border:1px solid rgba(137,252,255,.2); border-radius:8px; padding:8px; background:rgba(1,5,13,.46); }
+  .garage-item[data-equipped="true"],.tuning-item[data-maxed="true"]{ border-color:rgba(69,255,138,.58); }
+  .garage-copy{ margin:0; white-space:pre-wrap; font-size:12px; color:#9ecbd3; }
+  .swatch{ width:24px; height:24px; border:1px solid rgba(255,255,255,.5); border-radius:50%; background:var(--swatch,#16f0e6); box-shadow:0 0 12px var(--swatch,#16f0e6); }
+  .garage-preview{ min-height:94px; display:grid; grid-template-columns:auto 1fr; gap:12px; align-items:center; }
+  .garage-preview-ship{ width:112px; height:54px; position:relative; }
+  .garage-preview-ship::before{ content:""; position:absolute; inset:12px 16px 10px; transform:skewX(-18deg);
+    background:var(--preview-body,#28f6ff); box-shadow:0 0 16px var(--preview-under,#45ff8a); }
+  .garage-preview-ship::after{ content:""; position:absolute; left:26px; right:26px; top:25px; height:5px;
+    background:var(--preview-livery,#16f0e6); opacity:var(--preview-livery-opacity,.8); }
+  .settings-grid{ display:grid; gap:10px; max-width:520px; margin:0 0 16px; }
+  .settings-columns{ display:grid; grid-template-columns:repeat(auto-fit,minmax(360px,1fr)); gap:16px; align-items:start; max-height:72vh; overflow:auto; padding-right:4px; min-width:0; box-sizing:border-box; }
+  .settings-panel{ border:1px solid var(--line); border-radius:8px; padding:14px; background:rgba(5,20,32,.72); min-width:0; }
+  .settings-panel h3{ margin:0 0 10px; font-size:16px; }
+  .setting-row{ display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:12px; align-items:center;
+    min-height:44px; border:1px solid var(--line); border-radius:8px; padding:10px 12px;
+    background:rgba(5,20,32,.72); }
+  .setting-row input[type="checkbox"]{ width:20px; height:20px; accent-color:var(--cyan); }
+  .setting-row input[type="range"]{ width:100%; min-width:120px; accent-color:var(--cyan); }
+  .setting-row select{ width:100%; min-width:130px; }
+  .setting-copy{ margin:0; color:#cdeff4; font-size:13px; line-height:1.25; overflow-wrap:anywhere; }
+  .setting-value{ color:#ffe66d; font:700 13px/1 system-ui,sans-serif; overflow-wrap:anywhere; }
+  .keybind-list{ display:grid; gap:8px; }
+  .keybind-row{ display:grid; grid-template-columns:minmax(84px,.9fr) minmax(96px,1.1fr) minmax(76px,auto); gap:10px; align-items:center;
+    min-height:44px; border:1px solid rgba(137,252,255,.2); border-radius:8px; padding:8px;
+    background:rgba(1,5,13,.46); box-sizing:border-box; }
+  .keybind-row button{ justify-self:stretch; min-width:76px; }
+  .keybind-row[data-pending="true"]{ border-color:rgba(255,230,109,.76); box-shadow:0 0 0 1px rgba(255,230,109,.32); }
+  #course-preview{ display:grid; grid-template-columns:repeat(var(--preview-columns,7),1fr);
+    grid-template-rows:repeat(var(--preview-rows,12),minmax(5px,1fr)); gap:2px; height:min(52vh,420px);
+    border:1px solid var(--line); border-radius:8px; padding:8px; background:rgba(1,5,13,.72); }
+  .preview-cell{ min-width:8px; min-height:5px; background:rgba(255,255,255,.05); border-radius:2px; }
+  .preview-cell.is-road{ background:#78f6ff; }
+  .preview-cell.is-gapBoundary{ box-shadow:inset 0 0 0 1px #ffe66d; background:rgba(255,230,109,.12); }
+  .preview-cell.is-player{ background:#fff; box-shadow:0 0 10px #fff; }
+  .preview-cell.is-obstacle{ background:#ff2b4e; box-shadow:inset 0 0 0 2px #fff; }
+  .preview-cell.is-effectPad{ background:#45ff8a; background-image:linear-gradient(90deg,rgba(4,16,24,.65) 35%,transparent 35% 65%,rgba(4,16,24,.65) 65%); }
+  .preview-cell.is-finish{ background:#45ff8a; box-shadow:0 0 12px #45ff8a,inset 0 0 0 2px #ffe66d; }
+  #hud{ position:fixed; top:10px; left:12px; z-index:10; max-width:min(560px,calc(100vw - 24px));
+    padding:10px 12px; border:1px solid rgba(137,252,255,.3); border-radius:8px;
+    background:rgba(3,8,18,.64); color:#d9fbff; text-shadow:0 1px 3px #000; user-select:none;
+    pointer-events:none; white-space:pre-wrap; font-size:13px; line-height:1.35; letter-spacing:0; }
+  #terminal{ position:fixed; top:88px; right:18px; z-index:20;
+    width:min(360px,calc(100vw - 28px)); padding:14px; border:1px solid rgba(255,230,109,.44);
+    border-radius:8px; background:rgba(5,1,13,.88); box-shadow:0 0 28px rgba(22,240,230,.24);
+    text-align:left; }
+  #terminal[hidden]{ display:none; }
+  #terminal h1{ margin:0 0 8px; font-size:20px; line-height:1.1; letter-spacing:0; color:#ffe66d; }
+  #terminal p{ margin:0 0 14px; font-size:14px; line-height:1.35; color:#d9fbff; }
+  #controls{ position:fixed; right:18px; bottom:16px; z-index:30;
+    display:grid; grid-template-columns:repeat(3,64px); gap:8px; touch-action:none; }
+  button[data-action]{ min-height:48px; border:1px solid rgba(137,252,255,.42); border-radius:8px;
+    background:rgba(7,18,34,.78); color:#eafcff; font:600 13px/1 system-ui,sans-serif;
+    letter-spacing:0; touch-action:none; -webkit-user-select:none; user-select:none; }
+  button[data-action]:active, button[data-action][aria-pressed="true"]{ background:#16f0e6; color:#041018; }
+  #minimap-wrap{ position:fixed; left:14px; bottom:16px; z-index:25; width:126px; }
+  #minimap{ position:relative; display:grid; grid-template-columns:repeat(var(--mini-columns,7),1fr);
+    grid-template-rows:repeat(var(--mini-rows,32),2px); gap:1px; height:184px; padding:8px;
+    border:1px solid var(--line); border-radius:8px; background:rgba(1,5,13,.72); overflow:hidden; }
+  .mini-cell.is-road{ background:#78f6ff; opacity:.78; }
+  .mini-cell.is-gap{ background:rgba(255,255,255,.04); }
+  .mini-cell.is-gapBoundary{ background:rgba(255,230,109,.18); box-shadow:inset 0 0 0 1px rgba(255,230,109,.72); }
+  .mini-cell.is-obstacle{ background:#ff2b4e; box-shadow:inset 0 0 0 1px #fff; }
+  .mini-cell.is-effect{ background:#45ff8a; background-image:linear-gradient(90deg,rgba(1,5,13,.72) 35%,transparent 35% 65%,rgba(1,5,13,.72) 65%); }
+  .mini-cell.is-finish{ background:#ffe66d; box-shadow:inset 0 0 0 1px #45ff8a; }
+  .mini-player{ position:absolute; width:10px; height:10px; margin:-5px 0 0 -5px; border-radius:50%; background:#fff; box-shadow:0 0 12px #fff; }
+  #progress-rail{ height:5px; margin-top:8px; border-radius:999px; background:rgba(255,255,255,.12); overflow:hidden; }
+  #progress-rail::before{ content:""; display:block; width:var(--progress,0%); height:100%; background:linear-gradient(90deg,var(--cyan),var(--green)); }
+  #countdown{ position:fixed; inset:0; display:grid; place-items:center; pointer-events:none; }
+  #countdown[hidden]{ display:none; }
+  #countdown-value{ font-size:clamp(72px,18vw,180px); color:#fff; text-shadow:0 0 28px var(--cyan); }
+  .modal{ position:fixed; inset:0; display:grid; place-items:center; background:rgba(5,1,13,.72); }
+  .modal[hidden]{ display:none; }
+  .modal-body{ width:min(420px,calc(100vw - 32px)); border:1px solid var(--line); border-radius:8px;
+    background:var(--panel); padding:18px; box-shadow:0 0 34px rgba(22,240,230,.2); }
+  .modal-body h2{ margin:0 0 8px; font-size:28px; }
+  .modal-body p{ margin:0 0 16px; line-height:1.4; color:#cdeff4; }
+  #err{ position:fixed; bottom:10px; left:12px; z-index:60; color:#ff2b4e; font-size:13px; white-space:pre-wrap; }
+  html[data-high-contrast="true"]{ --line:rgba(234,252,255,.72); --panel:rgba(0,4,10,.94); }
+  html[data-high-contrast="true"] button,
+  html[data-high-contrast="true"] select,
+  html[data-high-contrast="true"] .setting-row,
+  html[data-high-contrast="true"] .route-card,
+  html[data-high-contrast="true"] .garage-panel,
+  html[data-high-contrast="true"] .settings-panel,
+  html[data-high-contrast="true"] #hud,
+  html[data-high-contrast="true"] #terminal,
+  html[data-high-contrast="true"] #minimap{ border-color:#eafcff; box-shadow:0 0 0 1px rgba(255,230,109,.42); }
+  html[data-high-contrast="true"] .muted,
+  html[data-high-contrast="true"] .setting-copy,
+  html[data-high-contrast="true"] .garage-copy{ color:#eafcff; }
+  html[data-reduced-motion="true"] *,
+  html[data-reduced-motion="true"] *::before,
+  html[data-reduced-motion="true"] *::after{ animation-duration:0.001ms !important; animation-iteration-count:1 !important; scroll-behavior:auto !important; transition-duration:0.001ms !important; }
+  @media (max-width:720px){
+    .route-grid{ grid-template-columns:1fr; }
+    .garage-grid{ grid-template-columns:1fr; max-height:76vh; }
+    .settings-columns{ grid-template-columns:1fr; max-height:76vh; }
+    .keybind-row{ grid-template-columns:1fr; }
+    .screen{ align-items:start; padding-top:28px; }
+    #hud{ font-size:12px; max-width:calc(100vw - 24px); }
+    #terminal{ top:84px; left:10px; right:auto; width:calc(100vw - 48px); }
+    #controls{ left:10px; right:10px; bottom:12px; grid-template-columns:repeat(3,minmax(44px,1fr)); }
+    button[data-action]{ min-height:46px; font-size:12px; }
+    #minimap-wrap{ left:10px; bottom:172px; width:104px; }
+    #minimap{ height:120px; }
+  }
 </style>
 <script type="importmap">
 { "imports": { "three": "./vendor/three/three.module.min.js",
@@ -19,8 +159,192 @@
 </script>
 </head>
 <body>
-<canvas id="c" aria-label="NEONDRIFT 3D race view" role="img"></canvas>
-<div id="hud" role="status" aria-live="polite"></div>
+<canvas id="c" aria-label="NEONDRIFT 3D race view" role="img" tabindex="-1"></canvas>
+<main id="app-shell" data-state="loading">
+  <section class="screen" data-screen="title" aria-labelledby="title-heading" hidden>
+    <div class="screen-panel">
+      <h1 id="title-heading">NEONDRIFT</h1>
+      <p>SkyRoads physics in a visible neon race shell. The Starter Cup is built in and exported source roads remain opt-in.</p>
+      <div class="command-row">
+        <button type="button" data-command="world-map" data-focus-default>Race</button>
+        <button type="button" data-command="garage">Garage</button>
+        <button type="button" data-command="settings">Settings</button>
+      </div>
+    </div>
+  </section>
+  <section class="screen" data-screen="world-map" aria-labelledby="world-map-heading" hidden>
+    <div class="screen-panel">
+      <h2 id="world-map-heading">Route Map</h2>
+      <p id="catalog-status" class="muted">Source roads: probing locally</p>
+      <div class="route-grid">
+        <div id="starter-list" class="route-list starter-list" role="list" aria-label="Starter Cup route list"></div>
+        <div>
+          <div id="source-list" class="route-list" role="list" aria-label="Exported source road list"></div>
+        </div>
+      </div>
+      <div class="command-row">
+        <button type="button" data-command="title">Title</button>
+      </div>
+    </div>
+  </section>
+  <section class="screen" data-screen="garage" aria-labelledby="garage-heading" hidden>
+    <div class="screen-panel">
+      <h2 id="garage-heading">Garage</h2>
+      <p id="garage-status" class="muted"></p>
+      <div class="garage-grid">
+        <div class="garage-panel">
+          <h3>Preview</h3>
+          <div id="garage-preview" class="garage-preview" aria-live="polite"></div>
+          <div class="command-row">
+            <button type="button" data-command="garage-reset">Reset</button>
+            <button type="button" data-command="title" data-focus-default>Back</button>
+          </div>
+        </div>
+        <div class="garage-panel">
+          <h3>Paint</h3>
+          <div id="garage-paints" class="garage-items" role="list" aria-label="Paint options"></div>
+        </div>
+        <div class="garage-panel">
+          <h3>Underglow</h3>
+          <div id="garage-underglows" class="garage-items" role="list" aria-label="Underglow options"></div>
+        </div>
+        <div class="garage-panel">
+          <h3>Livery</h3>
+          <div id="garage-liveries" class="garage-items" role="list" aria-label="Livery options"></div>
+        </div>
+        <div class="garage-panel">
+          <h3>Tuning</h3>
+          <p id="garage-reaction" class="garage-copy"></p>
+          <div id="garage-tuning" class="tuning-grid" role="list" aria-label="Tuning upgrades"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+  <section class="screen" data-screen="settings" aria-labelledby="settings-heading" hidden>
+    <div class="screen-panel">
+      <h2 id="settings-heading">Settings</h2>
+      <p id="settings-status" class="muted" aria-live="polite"></p>
+      <div class="settings-columns">
+        <div class="settings-panel">
+          <h3>Display</h3>
+          <div class="settings-grid" aria-label="Display and accessibility settings">
+            <label class="setting-row">
+              <input id="access-reduced-motion" type="checkbox" data-presentation-setting="reducedMotionForce">
+              <span class="setting-copy">Reduced motion</span>
+              <span class="setting-value">OS aware</span>
+            </label>
+            <label class="setting-row">
+              <input id="access-high-contrast" type="checkbox" data-presentation-setting="highContrast">
+              <span class="setting-copy">High contrast</span>
+              <span class="setting-value">Edges</span>
+            </label>
+            <label class="setting-row">
+              <span class="setting-copy">Render scale</span>
+              <input id="render-scale" type="range" min="0.5" max="1" step="0.05" data-presentation-setting="renderScale">
+              <span id="render-scale-value" class="setting-value">100%</span>
+            </label>
+            <label class="setting-row">
+              <span class="setting-copy">Quality</span>
+              <select id="quality-tier" data-presentation-setting="qualityTier">
+                <option value="desktop">Desktop</option>
+                <option value="balanced">Balanced</option>
+                <option value="battery">Battery</option>
+              </select>
+              <span class="setting-value">GPU</span>
+            </label>
+          </div>
+          <div class="command-row">
+            <button type="button" data-command="title" data-focus-default>Back</button>
+          </div>
+        </div>
+        <div class="settings-panel">
+          <h3>Keyboard</h3>
+          <div id="keybind-list" class="keybind-list" role="list" aria-label="Keyboard bindings"></div>
+        </div>
+        <div class="settings-panel">
+          <h3>Audio</h3>
+          <p id="audio-status" class="muted">Audio standby</p>
+          <div class="settings-grid" aria-label="Audio settings">
+            <label class="setting-row">
+              <input id="audio-muted" type="checkbox" data-audio-setting="muted">
+              <span class="setting-copy">Mute</span>
+              <span class="setting-value">All</span>
+            </label>
+            <label class="setting-row">
+              <input id="audio-music" type="checkbox" data-audio-setting="music">
+              <span class="setting-copy">Music</span>
+              <span class="setting-value">Synth</span>
+            </label>
+            <label class="setting-row">
+              <span class="setting-copy">Volume</span>
+              <input id="audio-volume" type="range" min="0" max="100" step="1" data-audio-setting="volume">
+              <span id="audio-volume-value" class="setting-value">80%</span>
+            </label>
+            <label class="setting-row">
+              <input id="audio-retro" type="checkbox" data-audio-setting="retroMuzax" disabled>
+              <span class="setting-copy">Retro/MUZAX</span>
+              <span class="setting-value">BYO</span>
+            </label>
+          </div>
+          <p id="audio-retro-status" class="muted"></p>
+        </div>
+      </div>
+    </div>
+  </section>
+  <section class="screen" data-screen="level-select" aria-labelledby="level-title" hidden>
+    <div class="screen-panel">
+      <h2 id="level-title">Select a route</h2>
+      <p id="level-meta" class="muted"></p>
+      <div id="course-preview" role="img" aria-label="Course preview"></div>
+      <div class="command-row">
+        <button type="button" data-command="launch-level" data-focus-default>Launch</button>
+        <button type="button" data-command="back-world">Map</button>
+      </div>
+    </div>
+  </section>
+  <section data-screen="race" hidden>
+    <div id="hud" role="status" aria-live="polite"></div>
+    <section id="terminal" role="dialog" aria-live="polite" aria-labelledby="terminal-title" hidden>
+      <h1 id="terminal-title"></h1>
+      <p id="terminal-detail"></p>
+      <button type="button" data-action="restart" aria-pressed="false" title="Retry run">Retry</button>
+    </section>
+    <div id="minimap-wrap" aria-label="Live route position">
+      <div id="minimap"></div>
+      <div id="progress-rail" aria-hidden="true"></div>
+    </div>
+    <nav id="controls" aria-label="Race controls">
+      <button type="button" data-action="left" aria-pressed="false" title="Steer left">Left</button>
+      <button type="button" data-action="right" aria-pressed="false" title="Steer right">Right</button>
+      <button type="button" data-action="accelerate" aria-pressed="false" title="Accelerate">Go</button>
+      <button type="button" data-action="brake" aria-pressed="false" title="Brake">Brake</button>
+      <button type="button" data-action="jump" aria-pressed="false" title="Jump">Jump</button>
+      <button type="button" data-action="pause" aria-pressed="false" title="Pause">Pause</button>
+    </nav>
+    <div id="countdown" hidden><div id="countdown-value">2</div></div>
+  </section>
+  <section class="modal" data-screen="pause" role="dialog" aria-modal="true" hidden>
+    <div class="modal-body">
+      <h2>Paused</h2>
+      <p>Simulation ticks are frozen and held input has been cleared.</p>
+      <div class="command-row">
+        <button type="button" data-command="resume" data-focus-default>Resume</button>
+        <button type="button" data-command="return-map">Map</button>
+      </div>
+    </div>
+  </section>
+  <section class="modal" data-screen="results" role="dialog" aria-modal="true" hidden>
+    <div class="modal-body">
+      <h2 id="results-title">Run Complete</h2>
+      <p id="results-detail"></p>
+      <div class="command-row">
+        <button type="button" data-command="retry" data-focus-default>Retry</button>
+        <button type="button" data-command="next-course" id="results-next" hidden>Next</button>
+        <button type="button" data-command="return-map">Map</button>
+      </div>
+    </div>
+  </section>
+</main>
 <div id="err" role="alert"></div>
 <script type="module" src="./src/main.js"></script>
 </body>

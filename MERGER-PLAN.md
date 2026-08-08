@@ -297,14 +297,14 @@ SkyRoads-Codex-test/
     demo/neon_demo_01.json       ← ORIGINAL neon level (ships in git, zero copyright) — playable w/o Bluemoon data
     VERSION                      ← web game semver, start 0.1.0
     CHANGELOG.md
-    .claude/launch.json          ← python3 -m http.server 8080 -d web
+    .claude/launch.json          ← python3 -m http.server 8091 -d web
   scripts/build-web.sh           ← NEW: export-json then serve
   LICENSE                        ← NEW: MIT (OUR code only) — repo currently has NONE
   NOTICE                         ← NEW: Bluemoon attribution
   README.md                      ← add "NEONDRIFT (neon 3D remake)" + "Attribution & IP" sections
 ```
 
-**`scripts/build-web.sh`:** `cargo run -p skyroads-cli --release -- export-json . web/assets` → then `python3 -m http.server 8080 -d web`. ES modules need `http://` (unlike NEONDRIFT's `file://` single-file) — **call this out in README as an accepted UX change**; the optional escape hatch is an esbuild single-bundle for `file://`, not required for v1.
+**`scripts/build-web.sh`:** `cargo run -p skyroads-cli --release -- export-json . web/assets` → then `python3 -m http.server 8091 -d web`. ES modules need `http://` (unlike NEONDRIFT's `file://` single-file) — **call this out in README as an accepted UX change**; the optional escape hatch is an esbuild single-bundle for `file://`, not required for v1.
 
 **`.gitignore` additions:** `web/assets/` (regenerated; also a second published copy of Bluemoon's level designs — keep it out of git), `web/vendor/` is committed (vendored dep), `web/node_modules/` ignored if tooling creeps in.
 
@@ -322,7 +322,7 @@ SkyRoads-Codex-test/
 - **LICENSE = MIT** covering ONLY our new code (the `export-json` exporter, the `web/` Three.js engine, garage, meta-progression, neon materials, Sparky cameo). Matches NEONDRIFT's existing MIT.
 - **NOTICE file:** "SkyRoads, the SKYROADS.EXE binary, and all original level data, art, music, and sound remain © Bluemoon Interactive and are NOT licensed by this repository. They are parsed/re-skinned for preservation, research, and interoperability. The MIT grant covers only the reverse-engineering code and the NEONDRIFT remake code. Sparky (neon wolf) is an original LoveSpark asset, MIT."
 - **Do NOT bundle extracted original-asset JSON/PNG in the public build.** `web/assets/` is git-ignored and generated locally from the user's OWN SkyRoads files (extends the "BYO data files" model the Rust port already assumes).
-- **Ship an ORIGINAL neon demo level** (`web/demo/neon_demo_01.json`, hand-authored, tunnel gate on final rows) so the game is fully playable with ZERO copyrighted data.
+- **Ship original NEONDRIFT tutorial content as tracked source** (the current root tutorial is hand-authored and not copied from exported roads/palettes); keep exported SkyRoads roads extract-only under explicit `?level=0..30`.
 - **MUZAX/retro audio OFF by default, attribution-flagged.**
 
 **FLAGGED OWNER DECISIONS (genuine owner-taste, not engineering — surface, do not auto-decide):**

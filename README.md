@@ -118,6 +118,43 @@ cargo run -p skyroads-sdl -- .
 
 If you want to run against a different local SkyRoads data directory, you can pass that path instead of `.`.
 
+NEONDRIFT web runtime:
+
+```bash
+# tracked-only public runtime; no generated source data required
+scripts/build-web.sh --tracked-only 8091
+
+# local BYO source-road export plus serve
+scripts/build-web.sh web/assets 8091
+```
+
+Both commands serve `web/` at `http://127.0.0.1:8091/`. Tracked-only mode clears stale
+`web/assets/` and serves the built-in Starter Cup without source data. BYO mode removes any
+stale generated `web/assets/` export, regenerates local level and palette JSON from the
+SkyRoads data files in this checkout, then serves the same web runtime. `web/assets/` is
+generated derivative data and remains ignored and untracked.
+
+The root URL opens the tracked original three-course NEONDRIFT Starter Cup: training,
+handling, and jump/effect routes authored in source. The unmodified exported SkyRoads
+source roads remain selectable only through `?level=0..30`; open `/?byo=1` after the BYO
+export command to discover the optional 30-course source campaign in the map.
+The web runtime uses original procedural synthwave and event SFX after a trusted user
+gesture; retro/source MUZAX playback remains BYO-only and disabled.
+
+Public web artifacts should be staged with:
+
+```bash
+node scripts/stage-public-artifact.mjs --out /tmp/neondrift-public-artifact
+```
+
+The staged manifest and delivery rules are documented in
+[`docs/neondrift-delivery.md`](docs/neondrift-delivery.md).
+
+Current web evidence is Rust/Node/HTTP based: the headless JS simulation is checked
+against the Rust oracle, all exported levels are schema/corpus validated, and the served
+module/asset graph can be checked locally. Browser visual automation is intentionally not
+claimed here because the current mission records that localhost browser automation is blocked.
+
 SDL controls:
 
 - `Up / Down`: menu, throttle, brake

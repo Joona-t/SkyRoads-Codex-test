@@ -4,8 +4,8 @@ Copyright (c) 2026 Joona (Joona-t)
 
 This license covers ONLY the original code authored in this repository: the reverse-
 engineering / native-port Rust crates under `crates/`, the `export-json` asset-extraction
-pipeline, the NEONDRIFT web game under `web/` (Three.js engine, garage, meta-progression,
-neon materials, save system), the build scripts, and the original "Sparky" (neon wolf) art.
+pipeline, the NEONDRIFT web runtime source and tests under `web/` excluding `web/vendor/three/`,
+the build scripts, and the original "Sparky" (neon wolf) art.
 
 It does NOT cover the original SkyRoads game — its DOS binary (SKYROADS.EXE), level data,
 artwork, palettes, music, or sound (the *.LZS / *.SND / *.DAT / *.REC resources). Those

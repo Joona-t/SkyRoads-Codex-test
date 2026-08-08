@@ -13,18 +13,29 @@ not relicense them.
 The MIT grant (see LICENSE) covers ONLY original code and original art authored here:
   - the Rust reverse-engineering / native-port crates (crates/)
   - the `export-json` asset-extraction pipeline
-  - the NEONDRIFT web game (web/): Three.js engine, garage, meta-progression, neon
-    materials, save system
+  - the NEONDRIFT web runtime source and tooling (web/index.html, web/src/, web/tests/,
+    scripts/)
   - the "Sparky" (neon wolf) mascot art — an original LoveSpark asset (MIT)
+
+Vendored Three.js files under web/vendor/three/ are third-party MIT-licensed code and retain
+their own license notice at web/vendor/three/LICENSE.
 
 Generated, derived asset data (the JSON/PNG produced by `export-json` under web/assets/)
 is treated as derivative of the original copyrighted data. It is therefore GIT-IGNORED and
 NOT distributed with this repository. To play with the original worlds, a user runs the
 exporter locally against SkyRoads data files they already own ("bring your own data").
 
-An original, hand-authored neon demo level (web/demo/) is planned to ship with the game
-(build phase P8) so it will be fully playable with ZERO original SkyRoads data. Until that
-lands, playing requires running the exporter against SkyRoads files you own.
+The root web runtime uses a tracked, hand-authored three-course NEONDRIFT Starter Cup in source
+code: training, handling, and jump/effect routes. The exported SkyRoads road corpus remains
+available only through explicit `?level=0..30` selection and stays generated/ignored under
+`web/assets/`. The built-in Starter Cup does not require `web/assets`; the exporter is only
+for local bring-your-own source roads and palettes.
+
+The public NEONDRIFT web artifact is staged from an allowlist by
+`node scripts/stage-public-artifact.mjs`. That artifact includes tracked web runtime/source,
+tracked original Starter Cup content, delivery docs, and vendored Three.js runtime files with
+their MIT license. It excludes the original SkyRoads files listed above, generated
+`web/assets/`, caches, local runtime state, and developer evidence.
 
 Open owner decisions (see MERGER-PLAN.md §8): repository public-vs-private posture, and
 whether to distribute original-derived assets or remain extract-only. Until resolved, the

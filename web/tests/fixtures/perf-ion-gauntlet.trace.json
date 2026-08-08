@@ -1,0 +1,14 @@
+{
+  "schema": "neondrift.perfTrace.v1",
+  "fixtureId": "starter-ion-gauntlet",
+  "courseId": "starter-ion-gauntlet",
+  "tickHz": 70,
+  "maxTicks": 980,
+  "controlsSource": "web/tests/fixtures/perf-ion-gauntlet.trace.json",
+  "controlsHash": "fe489c1ad1ffaa65e12c53b60fe6cf597408be0fc4971410257c4205a68732c1",
+  "segments": [
+    { "until": 250, "turn": 0, "accel": 1, "jump": false },
+    { "until": 320, "turn": 0, "accel": 1, "jump": true },
+    { "until": 980, "turn": 0, "accel": 1, "jump": false }
+  ]
+}
